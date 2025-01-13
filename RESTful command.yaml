@@ -1,3 +1,6 @@
+#RESTful command for associated automation: https://github.com/coltography/automations/blob/main/Bambu%20Labs%203D%20Printer%20Notifications.yaml
+#Needs to be added to Home Assistant configuration.yaml (and restarted) to work.
+
 rest_command:
   discord_3dp:
     url: "https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK_URL"
