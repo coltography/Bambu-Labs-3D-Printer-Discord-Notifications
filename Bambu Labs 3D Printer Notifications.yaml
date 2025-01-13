@@ -1,7 +1,8 @@
 #Requirements:
-# - Bambu Labs HACs integration: https://github.com/greghesp/ha-bambulab
-# - Smart plug with power summation of kWh usage
-# - Bambu Labs credentials login to get weight statistic from printer
+# - Bambu Labs HACs integration: https://github.com/greghesp/ha-bambulab.
+# - Smart plug with power summation of kWh usage.
+# - Bambu Labs credentials login to get weight statistic from printer.
+# - Additional folder within your /www/snapshots folder called "gcode_thumbnail" or define your own in the automation.
 
 
 
