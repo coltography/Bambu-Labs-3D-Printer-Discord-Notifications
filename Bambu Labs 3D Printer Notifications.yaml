@@ -3,6 +3,7 @@
 # - Smart plug with power summation of kWh usage.
 # - Bambu Labs credentials login to get weight statistic from printer.
 # - Additional folder within your /www/snapshots folder called "gcode_thumbnail" or define your own in the automation.
+# - RESTful command in your configuration.yaml with your own custom discord webhook: https://github.com/coltography/automations/blob/main/RESTful%20command
 
 
 
