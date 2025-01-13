@@ -1,35 +1,36 @@
-#Currently BROKEN and not working
-
+#Currently UNTESTED but finally opening in Home Assistant without errors.
 
 blueprint:
   name: 3D Printer - Completed Notification
-  description: Automation for notifying 3D print completion with relevant details.
+  description: Automation for sending a Discord message with current print statistics and historical analytics. 
   domain: automation
+  source_url: https://github.com/coltography
+  author: Colton Onushko
+#  homeassistant:
+#   min_version: 2024.6.0
   input:
 
 #Discord Restful Command Name
     discord_restful:
       name: Discord Notification Command Name
-      description: The name used to trigger your custom REST command in automations.
-      selector:
-        text:
-          mode: text
-          default: "rest_command.discord_3dp" 
-          multiline: false
+      description: The name of the RESTful command pasted into your configuration.yaml. If unchanged, used default.
+      default: rest_command.discord_3dp
+
+
 #Home Assistant URL
     home_url:
       name: Nabu Casa URL
-      description: Base URL for accessing snapshots.
-      default: "https://example.ui.nabu.casa"
+      description: External URL needed for image addresses in Discord. If only using locally, local address may work. (Not Tested)
+      default: https://example.ui.nabu.casa
 
-
-#Sensors & Images from Bambu Integration
-    print_status_sensor:
+# Sensors & Images from Bambu Integration
+    printer_status_sensor:
       name: Print Status Sensor
-      description: The sensor that indicates the current status of the print.
+      description: The entity that displays the current status of the print. (Idle, Running, Finish, etc.)
       selector:
         entity:
           domain: sensor
+          integration: bambu_lab
 
     print_progress_sensor:
       name: Print Progress Sensor
@@ -37,20 +38,22 @@ blueprint:
       selector:
         entity:
           domain: sensor
+          integration: bambu_lab
 
     printer_camera:
       name: Camera Entity
-      description: Entity to capture snapshots.
+      description: Entity to capture snapshots of the print.
       selector:
         entity:
           domain: camera
 
     gcode_image:
       name: GCode Image Entity
-      description: Entity to save GCode thumbnail.
+      description: Entity to save GCode thumbnail. (Will be "cover image" used by Bambu integration)
       selector:
         entity:
           domain: image
+          integration: bambu_lab
 
     print_weight_sensor:
       name: Print Weight Sensor
@@ -58,6 +61,8 @@ blueprint:
       selector:
         entity:
           domain: sensor
+          device_class: weight
+          integration: bambu_lab
 
     filament_length_sensor:
       name: Filament Length Sensor
@@ -65,13 +70,8 @@ blueprint:
       selector:
         entity:
           domain: sensor
-
-    power_sensor_sum:
-      name: Power Usage Sensor
-      description: Sensor entity tracking power usage. MUST be summation, not realtime wattage.
-      selector:
-        entity:
-          domain: sensor
+          integration: bambu_lab
+          device_class: distance
 
     start_time:
       name: Print Start Time
@@ -79,13 +79,15 @@ blueprint:
       selector:
         entity:
           domain: sensor
+          integration: bambu_lab
 
     end_time:
       name: Print End Time
-      description: Sensor entity print end time.
+      description: Sensor entity for print end time.
       selector:
         entity:
           domain: sensor
+          integration: bambu_lab
 
     printer_hours:
       name: Printer Hours Usage
@@ -93,69 +95,74 @@ blueprint:
       selector:
         entity:
           domain: sensor
+          integration: bambu_lab
 
-          
-  #Input Numbers
+    power_sensor_sum:
+      name: Power Usage Sensor
+      description: Sensor entity tracking power usage. MUST be summation, not realtime wattage. Requires energy tracking smart plug.
+      selector:
+        entity:
+          domain: sensor
+          device_class: energy
 
-      power_start:
+# Input Numbers
+    power_start:
       name: Power Usage Start Point
-      description: Input number for power usage start point.
+      description: Input number entity for power usage start point.
       selector:
         entity:
           domain: input_number
 
-      power_used:
+    power_used:
       name: Power Usage for Print
-      description: Input number for power used on current print.
+      description: Input number entityfor power used on current print.
       selector:
         entity:
           domain: input_number
 
-      filament_weight_sum:
+    filament_weight_sum:
       name: Cumulative Filament Weight Input
-      description: Input number for cumulative filament weight.
+      description: Input number entity for cumulative filament weight.
       selector:
         entity:
           domain: input_number
 
     filament_length_sum:
       name: Cumulative Filament Length Input
-      description: Input number for cumulative filament length.
+      description: Input number entity for cumulative filament length.
       selector:
         entity:
           domain: input_number
           
     filament_cost_sum:
       name: Cumulative Filament Cost Input
-      description: Input number for cumulative filament cost.
+      description: Input number entity for cumulative filament cost.
       selector:
         entity:
           domain: input_number
 
     electrical_cost_sum:
       name: Cumulative Electrical Cost Input
-      description: Input number for cumulative electrical cost.
+      description: Input number entity for cumulative electrical cost.
       selector:
         entity:
           domain: input_number
 
     total_cost_sum:
       name: Cumulative Total Cost Input
-      description: Input number for cumulative total cost.
+      description: Input number entity for cumulative total cost.
       selector:
         entity:
           domain: input_number
 
     gcode_image_filename:
       name: GCode Image Filename
-      description: Used to store the gcode image filename variable.
+      description: Input text entity to store the GCode image filename variable.
       selector:
-        text:
-          mode: text
-          multiline: false
+        entity:
+          domain: input_text
 
 # Cost Variables
-
     kwh_cost:
       name: Cost Per kWh
       description: Cost per kWh in your home for electrical cost estimates.
@@ -164,7 +171,7 @@ blueprint:
         number:
           min: 0
           max: 100
-          step: 0.0001
+          step: 0.001
 
     gram_cost:
       name: Cost Per Gram of Filament
@@ -177,13 +184,19 @@ blueprint:
           step: 0.001
 
 
-  trigger:
-    - platform: state
-      entity_id: !input print_status_sensor
-      to: prepare
-    - platform: numeric_state
-      entity_id: !input print_progress_sensor
-      above: 98
+triggers:
+  - trigger: state
+    entity_id:
+      - !input printer_status_sensor
+    to: prepare
+    alias: Print Prepare
+    id: Prepare
+  - alias: Print Completed
+    trigger: numeric_state
+    entity_id:
+      - !input print_progress_sensor
+    above: 98
+    id: Completed
 
 
 actions:
@@ -393,7 +406,7 @@ actions:
           photo_url: "{{ photo_url }}"
           thumb_url: "{{thumb_url }}"
         action: !input discord_restful
-        alias: Send Discord Message
+        alias: Send Discord Message 
 mode: single
 
 
