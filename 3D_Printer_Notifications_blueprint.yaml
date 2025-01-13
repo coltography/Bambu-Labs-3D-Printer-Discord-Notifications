@@ -1,0 +1,396 @@
+blueprint:
+  name: 3D Printer - Completed Notification
+  description: Automation for notifying 3D print completion with relevant details.
+  domain: automation
+  input:
+
+#Discord Restful Command Name
+    discord_restful:
+      name: Discord Notification Command Name
+      description: The name used to trigger your custom REST command in automations.
+      selector:
+        text:
+          mode: text
+          default: "rest_command.discord_3dp" 
+          multiline: false
+#Home Assistant URL
+    home_url:
+      name: Nabu Casa URL
+      description: Base URL for accessing snapshots.
+      default: "https://example.ui.nabu.casa"
+
+
+#Sensors & Images from Bambu Integration
+    print_status_sensor:
+      name: Print Status Sensor
+      description: The sensor that indicates the current status of the print.
+      selector:
+        entity:
+          domain: sensor
+
+    print_progress_sensor:
+      name: Print Progress Sensor
+      description: Sensor entity tracking the printer's progress in percentage.
+      selector:
+        entity:
+          domain: sensor
+
+    printer_camera:
+      name: Camera Entity
+      description: Entity to capture snapshots.
+      selector:
+        entity:
+          domain: camera
+
+    gcode_image:
+      name: GCode Image Entity
+      description: Entity to save GCode thumbnail.
+      selector:
+        entity:
+          domain: image
+
+    print_weight_sensor:
+      name: Print Weight Sensor
+      description: Sensor to get the print weight.
+      selector:
+        entity:
+          domain: sensor
+
+    filament_length_sensor:
+      name: Filament Length Sensor
+      description: Sensor entity for filament length of current print.
+      selector:
+        entity:
+          domain: sensor
+
+    power_sensor_sum:
+      name: Power Usage Sensor
+      description: Sensor entity tracking power usage. MUST be summation, not realtime wattage.
+      selector:
+        entity:
+          domain: sensor
+
+    start_time:
+      name: Print Start Time
+      description: Sensor entity for print start time.
+      selector:
+        entity:
+          domain: sensor
+
+    end_time:
+      name: Print End Time
+      description: Sensor entity print end time.
+      selector:
+        entity:
+          domain: sensor
+
+    printer_hours:
+      name: Printer Hours Usage
+      description: Sensor entity for printer hours usage.
+      selector:
+        entity:
+          domain: sensor
+
+          
+  #Input Numbers
+
+      power_start:
+      name: Power Usage Start Point
+      description: Input number for power usage start point.
+      selector:
+        entity:
+          domain: input_number
+
+      power_used:
+      name: Power Usage for Print
+      description: Input number for power used on current print.
+      selector:
+        entity:
+          domain: input_number
+
+      filament_weight_sum:
+      name: Cumulative Filament Weight Input
+      description: Input number for cumulative filament weight.
+      selector:
+        entity:
+          domain: input_number
+
+    filament_length_sum:
+      name: Cumulative Filament Length Input
+      description: Input number for cumulative filament length.
+      selector:
+        entity:
+          domain: input_number
+          
+    filament_cost_sum:
+      name: Cumulative Filament Cost Input
+      description: Input number for cumulative filament cost.
+      selector:
+        entity:
+          domain: input_number
+
+    electrical_cost_sum:
+      name: Cumulative Electrical Cost Input
+      description: Input number for cumulative electrical cost.
+      selector:
+        entity:
+          domain: input_number
+
+    total_cost_sum:
+      name: Cumulative Total Cost Input
+      description: Input number for cumulative total cost.
+      selector:
+        entity:
+          domain: input_number
+
+    gcode_image_filename:
+      name: GCode Image Filename
+      description: Used to store the gcode image filename variable.
+      selector:
+        text:
+          mode: text
+          multiline: false
+
+# Cost Variables
+
+    kwh_cost:
+      name: Cost Per kWh
+      description: Cost per kWh in your home for electrical cost estimates.
+      default: 0.1097
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.0001
+
+    gram_cost:
+      name: Cost Per Gram of Filament
+      description: Cost per gram (after tax!) of your filament for cost estimates.
+      default: 0.025
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.001
+
+
+  trigger:
+    - platform: state
+      entity_id: !input print_status_sensor
+      to: prepare
+    - platform: numeric_state
+      entity_id: !input print_progress_sensor
+      above: 98
+
+
+actions:
+  - alias: Set Power Usage Start Point
+    if:
+      - condition: trigger
+        id:
+          - Prepare
+    then:
+      - alias: Remember kWh Start Reading
+        target:
+          entity_id: !input power_start
+        data:
+          value: "{{ states('!input power_sensor_sum') | float(0) }}"
+        action: input_number.set_value
+  - alias: Print Completed Notification
+    if:
+      - condition: trigger
+        id:
+          - Completed
+        enabled: true
+        alias: Completed Trigger
+    then:
+      - variables:
+          snapshot_filename: >
+            3D_Print_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
+            states('!input printer_weight_sensor') }}g).jpg
+        alias: Define Snapshot Name and Format
+      - action: camera.snapshot
+        metadata: {}
+        data:
+          filename: /config/www/snapshots/{{ snapshot_filename }}
+        target:
+          entity_id: !input printer_camera
+        alias: Take Snapshot of 3D Print
+      - action: input_text.set_value
+        metadata: {}
+        data:
+          value: >-
+            gcode_{{ states('sensor.3dp_gcode_filename') | replace(':', '_') |
+            replace('/', '_') }}_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
+            states('!input print_weight_sensor') }}g).png
+        target:
+          entity_id: !input gcode_image_filename
+        alias: Set GCode Filename Variable
+      - action: image.snapshot
+        metadata: {}
+        data:
+          filename: >
+            /config/www/snapshots/gcode_thumbnail/{{ !input gcode_image_filename }}
+        target:
+          entity_id: !input gcode_image
+        alias: Save GCode Image
+      - if:
+          - condition: state
+            entity_id: !input printer_status_sensor
+            state: running
+        then:
+          - wait_for_trigger:
+              - trigger: state
+                entity_id:
+                  - !input printer_status_sensor
+                to: finish
+            continue_on_timeout: false
+            alias: Wait For Printer to Finish
+        alias: Wait For Print to Finish if Not Finished
+        enabled: true
+      - variables:
+          end_power: "{{ states('!input power_sensor_sum') | float(0) }}"
+          start_power: "{{ states('!input power_start') | float(0) }}"
+          total_kWh: "{{ (end_power - start_power) | float(0) }}"
+          filament_cost: >-
+            {{ (states('!input print_weight_sensor') | float(0) * !input gram_cost) | round(2)
+            }}
+          electrical_cost: "{{ (total_kWh | float(0) * !input kwh_cost) | round(2) }}"
+          total_cost: >-
+            {{ '{:.2f}'.format(filament_cost | float(0) + electrical_cost |
+            float(0)) }}
+        alias: >-
+          Define variables: End Power, Start Power, Total kWh, Filament Cost,
+          Electrical Cost, and Total Cost
+      - target:
+          entity_id: !input power_used
+        data:
+          value: "{{ total_kWh }}"
+        action: input_number.set_value
+        alias: Set kWh Used Input Number
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+# Optional minimal phone notification to be added possibly          
+#      - data:
+#          title: 3D Print Completed
+#          message: >
+#            Weight: {{ states('!input print_weight_sensor') }}g (${{ filament_cost
+#            }}) | Power: {{ total_kWh | round(3) }} kWh (${{ electrical_cost }})
+#            | Total Cost: ${{ total_cost }}
+#          data:
+#            image: >
+#              {{ !input home_url }}/local/snapshots/{{
+#              snapshot_filename }}
+#            clickAction:{{ !input home_url }}/your/dashboard/url
+#        action: notify.device_entity
+#        alias: Send Notification to Phone
+
+      - data:
+          value: >
+            {{ states('!input filament_length_sensor') | float(0) +
+            states('!input filament_length_sum') | float(0) }}
+        target:
+          entity_id: !input filament_length_sum
+        action: input_number.set_value
+        alias: Update Cumulative Filament Length Statistic
+        enabled: true
+      - data:
+          value: |
+            {{ states('!input filament_weight_sum') | float(0) +
+               states('!input print_weight_sensor') | float(0) }}
+        target:
+          entity_id: !input filament_weight_sum
+        action: input_number.set_value
+        alias: Update Cumulative Filament Weight Used Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('!input filament_cost_sum') | float(0) +
+            filament_cost | float(0) }}
+        target:
+          entity_id: !input filament_cost_sum
+        action: input_number.set_value
+        alias: Update Cumulative Filament Cost Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('!input electrical_cost_sum') | float(0) +
+            electrical_cost | float(0) }}
+        target:
+          entity_id: !input electrical_cost_sum
+        action: input_number.set_value
+        alias: Update Cumulative Electrical Cost Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('!input total_cost_sum') | float(0) + total_cost
+            | float(0) }}
+        target:
+          entity_id: !input total_cost_sum
+        action: input_number.set_value
+        alias: Update Total Cumulative Cost Statistic
+        enabled: true
+      - variables:
+          cumulative_cost: >-
+            {{ '%.2f' | format(states('!input total_cost_sum') |
+            float(0)) }}
+          length: "{{ states('!input filament_length_sensor') | float(0) }}"
+          length_ft: >-
+            {{ ((states('!input filament_length_sensor') | float(0)) * 3.28084) |
+            round(2) }}
+          length_total: >-
+            {{ states('!input filament_length_sum') | float(0)
+            }}
+          length_total_ft: >-
+            {{ ((states('!input filament_length_sum') |
+            float(0)) * 3.28084) | round(2) }}
+          printer_hours: "{{ states('!input printer_hours') | float(0) }}"
+          weight_alltime: >-
+            {{ (states('!input filament_weight_sum') | float(0) /
+            453.5924) | round(2) }}
+          start_time: "{{ states('!input start_time') | as_datetime }}"
+          end_time: "{{ states('!input end_time') | as_datetime }}"
+          duration: >
+            {% set start_time = states('!input start_time') | as_datetime %}
+            {% set end_time = states('!input end_time') | as_datetime %} {%
+            set delta = (end_time - start_time).total_seconds() %} {% set days =
+            delta // 86400 %} {% set hours = (delta % 86400) // 3600 %} {% set
+            minutes = (delta % 3600) // 60 %}
+
+            {%- if days > 0 -%}
+              {{ days }} day{{ 's' if days > 1 else '' }}{% if hours > 0 or minutes > 0 %}, {% endif %}
+            {%- endif -%} {%- if hours > 0 -%}
+              {{ hours | int }} hour{{ 's' if hours > 1 else '' }}{% if minutes > 0 %}, {% endif %}
+            {%- endif -%} {%- if minutes > 0 -%}
+              {{ minutes | round(0) }} minute{{ 's' if minutes > 1 else '' }}
+            {%- endif %}
+          response: >
+            **Duration:** {{ duration }}\n **Weight:** {{
+            states('!input print_weight_sensor') }}g (${{ filament_cost }})\n
+            **Filament Length:** {{ length }}m ({{ length_ft }}ft) \n **Power:**
+            {{ total_kWh | round(3) }} kWh (${{ electrical_cost }})\n **Total
+            Cost:** ${{ total_cost }}\n ---\n **All Time Statistics**\n
+            **Usage:** {{ printer_hours }} Hours\n **Cost:** ${{ cumulative_cost
+            }}\n **All Time Weight:** {{ weight_alltime }}lbs\n **Length:** {{
+            length_total }}m ({{ length_total_ft }}ft)
+          photo_url: >
+            {{ !input home_url }}/local/snapshots/{{
+            snapshot_filename | urlencode }}
+          thumb_url: >
+            {{ !input home_url }}/local/snapshots/gcode_thumbnail/{{ !input gcode_image_filename | urlencode }}
+        alias: >-
+          Define variables: Cost, Length, Length (ft), Length (Total), Length
+          Total (ft), Printer Hours (All Time), Weight (All Time), Start Time,
+          End Time, Duration, Discord Message, and Photo URL
+      - data:
+          response: "{{ response }}"
+          photo_url: "{{ photo_url }}"
+          thumb_url: "{{thumb_url }}"
+        action: !input discord_restful
+        alias: Send Discord Message
+mode: single
+
+
