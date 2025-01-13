@@ -1,3 +1,6 @@
+#Currently BROKEN and not working
+
+
 blueprint:
   name: 3D Printer - Completed Notification
   description: Automation for notifying 3D print completion with relevant details.
