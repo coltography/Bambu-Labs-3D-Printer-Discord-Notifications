@@ -1,3 +1,10 @@
+#Requirements:
+# - Bambu Labs HACs integration: https://github.com/greghesp/ha-bambulab
+# - Smart plug with power summation of kWh usage
+# - Bambu Labs credentials login to get weight statistic from printer
+
+
+
 alias: 3D Printer - Completed Notification
 description: ""
 triggers:
