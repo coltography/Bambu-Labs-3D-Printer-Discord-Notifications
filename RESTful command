@@ -1,0 +1,22 @@
+rest_command:
+  discord_3dp:
+    url: "https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK_URL"
+    method: post
+    headers:
+      Content-Type: "application/json"
+    payload: >
+      {
+        "username": "Print Completed!",
+        "embeds": [
+          {
+            "description": "{{ response }}",
+            "color": 2401603,
+            "image": {
+              "url": "{{ photo_url }}"
+            },
+            "thumbnail": {
+              "url": "{{thumb_url }}"
+            }
+          }
+        ]
+      }
