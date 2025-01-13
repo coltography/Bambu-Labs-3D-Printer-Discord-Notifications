@@ -1,0 +1,293 @@
+alias: 3D Printer - Completed Notification
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.3dp_print_status
+    to: prepare
+    alias: Print Prepare
+    id: Prepare
+  - trigger: state
+    entity_id:
+      - sensor.3dp_print_status
+    from: prepare
+    to: running
+    alias: Print Start
+    id: Start
+  - alias: Print Progress
+    trigger: state
+    entity_id:
+      - sensor.3dp_01p00a442001012_current_layer
+    to: "3"
+    id: Progress
+  - alias: Print Completed
+    trigger: numeric_state
+    entity_id:
+      - sensor.3dp_01p00a442001012_print_progress
+    above: 98
+    id: Completed
+  - trigger: state
+    entity_id:
+      - sensor.3dp_print_status
+    to: pause
+    alias: Print Paused
+    id: Paused
+conditions: []
+actions:
+  - alias: Set Power Usage Start Point
+    if:
+      - condition: trigger
+        id:
+          - Prepare
+    then:
+      - alias: Remember kWh Start Reading
+        target:
+          entity_id: input_number.3d_print_kwh_start
+        data:
+          value: "{{ states('sensor.3dp_power_sum') | float(0) }}"
+        action: input_number.set_value
+  - alias: Print Completed Notification
+    if:
+      - condition: trigger
+        id:
+          - Completed
+        enabled: true
+        alias: Completed Trigger
+    then:
+      - variables:
+          snapshot_filename: >
+            3D_Print_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
+            states('sensor.3dp_print_weight') }}g).jpg
+        alias: Define Snapshot Name and Format
+      - action: camera.snapshot
+        metadata: {}
+        data:
+          filename: /config/www/snapshots/{{ snapshot_filename }}
+        target:
+          entity_id: camera.3dp_camera
+        alias: Take Snapshot of 3D Print
+      - action: input_text.set_value
+        metadata: {}
+        data:
+          value: >-
+            gcode_{{ states('sensor.3dp_gcode_filename') | replace(':', '_') |
+            replace('/', '_') }}_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
+            states('sensor.3dp_print_weight') }}g).png
+        target:
+          entity_id: input_text.gcode_filename_variable
+        alias: Set GCode Filename Variable
+      - action: image.snapshot
+        metadata: {}
+        data:
+          filename: >
+            /config/www/snapshots/gcode_thumbnail/{{
+            states('input_text.gcode_filename_variable') }}
+        target:
+          entity_id: image.3dp_cover_image
+        alias: Save GCode Image
+      - if:
+          - condition: state
+            entity_id: sensor.3dp_print_status
+            state: running
+        then:
+          - wait_for_trigger:
+              - trigger: state
+                entity_id:
+                  - sensor.3dp_print_status
+                to: finish
+            continue_on_timeout: false
+            alias: Wait For Printer to Finish
+        alias: Wait For Print to Finish if Not Finished
+        enabled: true
+      - variables:
+          end_power: "{{ states('sensor.3dp_power_sum') | float(0) }}"
+          start_power: "{{ states('input_number.3d_print_kwh_start') | float(0) }}"
+          total_kWh: "{{ (end_power - start_power) | float(0) }}"
+          filament_cost: >-
+            {{ (states('sensor.3dp_print_weight') | float(0) * 0.025) | round(2)
+            }}
+          electrical_cost: "{{ (total_kWh | float(0) * 0.1097) | round(2) }}"
+          total_cost: >-
+            {{ '{:.2f}'.format(filament_cost | float(0) + electrical_cost |
+            float(0)) }}
+        alias: >-
+          Define variables: End Power, Start Power, Total kWh, Filament Cost,
+          Electrical Cost, and Total Cost
+      - target:
+          entity_id: input_number.3d_print_kwh_used
+        data:
+          value: "{{ total_kWh }}"
+        action: input_number.set_value
+        alias: Set kWh Used Input Number
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+      - data:
+          title: 3D Print Completed
+          message: >
+            Weight: {{ states('sensor.3dp_print_weight') }}g (${{ filament_cost
+            }}) | Power: {{ total_kWh | round(3) }} kWh (${{ electrical_cost }})
+            | Total Cost: ${{ total_cost }}
+          data:
+            image: >
+              https://YOUR_HOMEASSISTANT_EXTERNAL_URL.ui.nabu.casa/local/snapshots/{{
+              snapshot_filename }}
+            clickAction: http://homeassistant.local:8123/lovelace/3d
+        action: notify.mobile_app_satellite
+        alias: Send Notification to iPhone
+        enabled: true
+      - data:
+          value: >
+            {{ states('sensor.3dp_print_length') | float(0) +
+            states('input_number.3d_filament_length_cumulative') | float(0) }}
+        target:
+          entity_id: input_number.3d_filament_length_cumulative
+        action: input_number.set_value
+        alias: Update Cumulative Filament Length Statistic
+        enabled: true
+      - data:
+          value: |
+            {{ states('input_number.total_filament_usage_weight') | float(0) +
+               states('sensor.3dp_print_weight') | float(0) }}
+        target:
+          entity_id: input_number.total_filament_usage_weight
+        action: input_number.set_value
+        alias: Update Cumulative Filament Weight Used Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('input_number.3d_filament_cost_total') | float(0) +
+            filament_cost | float(0) }}
+        target:
+          entity_id: input_number.3d_filament_cost_total
+        action: input_number.set_value
+        alias: Update Cumulative Filament Cost Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('input_number.3d_electrical_cost_cumulative') | float(0) +
+            electrical_cost | float(0) }}
+        target:
+          entity_id: input_number.3d_electrical_cost_cumulative
+        action: input_number.set_value
+        alias: Update Cumulative Electrical Cost Statistic
+        enabled: true
+      - data:
+          value: >
+            {{ states('input_number.3d_cost_cumulative') | float(0) + total_cost
+            | float(0) }}
+        target:
+          entity_id: input_number.3d_cost_cumulative
+        action: input_number.set_value
+        alias: Update Total Cumulative Cost Statistic
+        enabled: true
+      - variables:
+          cumulative_cost: >-
+            {{ '%.2f' | format(states('input_number.3d_cost_cumulative') |
+            float(0)) }}
+          length: "{{ states('sensor.3dp_print_length') | float(0) }}"
+          length_ft: >-
+            {{ ((states('sensor.3dp_print_length') | float(0)) * 3.28084) |
+            round(2) }}
+          length_total: >-
+            {{ states('input_number.3d_filament_length_cumulative') | float(0)
+            }}
+          length_total_ft: >-
+            {{ ((states('input_number.3d_filament_length_cumulative') |
+            float(0)) * 3.28084) | round(2) }}
+          printer_hours: "{{ states('sensor.3dp_01p00a442001012_total_usage') | float(0) }}"
+          weight_alltime: >-
+            {{ (states('input_number.total_filament_usage_weight') | float(0) /
+            453.5924) | round(2) }}
+          start_time: "{{ states('sensor.3dp_start_time') | as_datetime }}"
+          end_time: "{{ states('sensor.3dp_end_time') | as_datetime }}"
+          duration: >
+            {% set start_time = states('sensor.3dp_start_time') | as_datetime %}
+            {% set end_time = states('sensor.3dp_end_time') | as_datetime %} {%
+            set delta = (end_time - start_time).total_seconds() %} {% set days =
+            delta // 86400 %} {% set hours = (delta % 86400) // 3600 %} {% set
+            minutes = (delta % 3600) // 60 %}
+
+            {%- if days > 0 -%}
+              {{ days }} day{{ 's' if days > 1 else '' }}{% if hours > 0 or minutes > 0 %}, {% endif %}
+            {%- endif -%} {%- if hours > 0 -%}
+              {{ hours | int }} hour{{ 's' if hours > 1 else '' }}{% if minutes > 0 %}, {% endif %}
+            {%- endif -%} {%- if minutes > 0 -%}
+              {{ minutes | round(0) }} minute{{ 's' if minutes > 1 else '' }}
+            {%- endif %}
+          response: >
+            **Duration:** {{ duration }}\n **Weight:** {{
+            states('sensor.3dp_print_weight') }}g (${{ filament_cost }})\n
+            **Filament Length:** {{ length }}m ({{ length_ft }}ft) \n **Power:**
+            {{ total_kWh | round(3) }} kWh (${{ electrical_cost }})\n **Total
+            Cost:** ${{ total_cost }}\n ---\n **All Time Statistics**\n
+            **Usage:** {{ printer_hours }} Hours\n **Cost:** ${{ cumulative_cost
+            }}\n **All Time Weight:** {{ weight_alltime }}lbs\n **Length:** {{
+            length_total }}m ({{ length_total_ft }}ft)
+          photo_url: >
+            https://gYOUR_HOMEASSISTANT_EXTERNAL_URL.ui.nabu.casa/local/snapshots/{{
+            snapshot_filename | urlencode }}
+          thumb_url: >
+            https://YOUR_HOMEASSISTANT_EXTERNAL_URL.ui.nabu.casa/local/snapshots/gcode_thumbnail/{{
+            states('input_text.gcode_filename_variable') | urlencode }}
+        alias: >-
+          Define variables: Cost, Length, Length (ft), Length (Total), Length
+          Total (ft), Printer Hours (All Time), Weight (All Time), Start Time,
+          End Time, Duration, Discord Message, and Photo URL
+      - data:
+          response: "{{ response }}"
+          photo_url: "{{ photo_url }}"
+          thumb_url: "{{thumb_url }}"
+        action: rest_command.discord_3dp
+        alias: Send Discord Message
+  - alias: Print Progress Notification
+    if:
+      - condition: trigger
+        id:
+          - Progress
+    then:
+      - data:
+          message: "Current progress of print:"
+          title: 3D Printer
+          data:
+            entity_id: camera.3dp_camera
+            push:
+              category: camera
+            clickAction: http://homeassistant.local:8123/lovelace/3d
+        action: notify.mobile_app_satellite
+  - alias: Print Paused Notification
+    if:
+      - condition: and
+        conditions:
+          - condition: trigger
+            id:
+              - Paused
+          - condition: state
+            entity_id: input_boolean.sleeping_toggle
+            state: "off"
+    then:
+      - device_id: a90730d3618d62a0b5595635298691e1
+        domain: mobile_app
+        type: notify
+        message: Paused!
+        title: 3D Printer
+        alias: Send Notification to Colton's iPhone
+      - data:
+          data:
+            type: tts
+          message: Hey Colton! The 3D Printer has paused its print job!
+        alias: "Announce on Alexa: 3D Printer has paused"
+        action: notify.alexa_media_home
+      - data:
+          message: 3D Printer has paused!
+          title: Attention
+        action: notify.televi5ion
+        alias: Send Desktop Notification to Living Room HTPC
+      - data:
+          message: 3D Printer has paused!
+          title: Attention
+        action: notify.battlest4tion
+        alias: Send Desktop Notification to Colton's PC
+
