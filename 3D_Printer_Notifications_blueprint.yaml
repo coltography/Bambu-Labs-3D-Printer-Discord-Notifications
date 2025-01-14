@@ -6,8 +6,6 @@ blueprint:
   domain: automation
   source_url: https://github.com/coltography
   author: Colton Onushko
-#  homeassistant:
-#   min_version: 2024.6.0
   input:
 
 #Discord Restful Command Name
@@ -31,6 +29,8 @@ blueprint:
         entity:
           domain: sensor
           integration: bambu_lab
+          device_class: enum
+          
 
     print_progress_sensor:
       name: Print Progress Sensor
@@ -53,6 +53,14 @@ blueprint:
       selector:
         entity:
           domain: image
+          integration: bambu_lab
+
+    gcode_filename:
+      name: GCode File Name 
+      description: Entity to use for GCode Image Snapshot name prefix.
+      selector:
+        entity:
+          domain: sensor
           integration: bambu_lab
 
     print_weight_sensor:
@@ -99,11 +107,12 @@ blueprint:
 
     power_sensor_sum:
       name: Power Usage Sensor
-      description: Sensor entity tracking power usage. MUST be summation, not realtime wattage. Requires energy tracking smart plug.
+      description: Sensor entity tracking power usage. MUST be summation, not realtime wattage. Requires energy tracking smart plug. Optional but may break the automation if none used.
       selector:
         entity:
           domain: sensor
           device_class: energy
+      default: null
 
 # Input Numbers
     power_start:
@@ -115,7 +124,7 @@ blueprint:
 
     power_used:
       name: Power Usage for Print
-      description: Input number entityfor power used on current print.
+      description: Input number entity for power used on current print.
       selector:
         entity:
           domain: input_number
@@ -221,32 +230,26 @@ actions:
         alias: Completed Trigger
     then:
       - variables:
-          snapshot_filename: >
-            3D_Print_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
-            states('!input printer_weight_sensor') }}g).jpg
+          snapshot_filename: "3D_Print_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{ states('!input print_weight_sensor') }}g).jpg"
         alias: Define Snapshot Name and Format
       - action: camera.snapshot
         metadata: {}
         data:
-          filename: /config/www/snapshots/{{ snapshot_filename }}
+          filename: "/config/www/snapshots/{{ snapshot_filename }}"
         target:
           entity_id: !input printer_camera
         alias: Take Snapshot of 3D Print
       - action: input_text.set_value
         metadata: {}
         data:
-          value: >-
-            gcode_{{ states('!input gcode_image_filename') | replace(':', '_') |
-            replace('/', '_') }}_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
-            states('!input print_weight_sensor') }}g).png
+          value: "gcode_simple_name.png"
         target:
           entity_id: !input gcode_image_filename
         alias: Set GCode Filename Variable
       - action: image.snapshot
         metadata: {}
         data:
-          filename: >
-            /config/www/snapshots/gcode_thumbnail/{{ !input gcode_image_filename }}
+          filename: "/config/www/snapshots/gcode_thumbnail/{{ states('!input gcode_image_filename') }}"
         target:
           entity_id: !input gcode_image
         alias: Save GCode Image
@@ -268,13 +271,12 @@ actions:
           end_power: "{{ states('!input power_sensor_sum') | float(0) }}"
           start_power: "{{ states('!input power_start') | float(0) }}"
           total_kWh: "{{ (end_power - start_power) | float(0) }}"
-          filament_cost: >-
-            {{ (states('!input print_weight_sensor') | float(0) * !input gram_cost) | round(2)
-            }}
-          electrical_cost: "{{ (total_kWh | float(0) * !input kwh_cost) | round(2) }}"
-          total_cost: >-
-            {{ '{:.2f}'.format(filament_cost | float(0) + electrical_cost |
-            float(0)) }}
+          print_weight_sensor: !input print_weight_sensor
+          gram_cost: !input gram_cost
+          filament_cost: "{{ (states(print_weight_sensor) | float(0) * gram_cost) | round(2) }}"
+          kwh_cost: !input kwh_cost
+          electrical_cost: "{{ (total_kWh | float(0) * kwh_cost) | round(2) }}"
+          total_cost: "{{ '{:.2f}'.format(filament_cost | float(0) + electrical_cost | float(0)) }}"
         alias: >-
           Define variables: End Power, Start Power, Total kWh, Filament Cost,
           Electrical Cost, and Total Cost
@@ -392,11 +394,13 @@ actions:
             **Usage:** {{ printer_hours }} Hours\n **Cost:** ${{ cumulative_cost
             }}\n **All Time Weight:** {{ weight_alltime }}lbs\n **Length:** {{
             length_total }}m ({{ length_total_ft }}ft)
+          home_url_text: !input home_url
+          gcode_image_filename_entity: !input gcode_image_filename
           photo_url: >
-            {{ !input home_url }}/local/snapshots/{{
+            {{ home_url_text }}/local/snapshots/{{
             snapshot_filename | urlencode }}
           thumb_url: >
-            {{ !input home_url }}/local/snapshots/gcode_thumbnail/{{ !input gcode_image_filename | urlencode }}
+            {{ home_url_text }}/local/snapshots/gcode_thumbnail/{{ gcode_image_filename_entity | urlencode }}
         alias: >-
           Define variables: Cost, Length, Length (ft), Length (Total), Length
           Total (ft), Printer Hours (All Time), Weight (All Time), Start Time,
@@ -408,5 +412,7 @@ actions:
         action: !input discord_restful
         alias: Send Discord Message 
 mode: single
+
+
 
 
