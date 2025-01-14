@@ -236,7 +236,7 @@ actions:
         metadata: {}
         data:
           value: >-
-            gcode_{{ states('sensor.3dp_gcode_filename') | replace(':', '_') |
+            gcode_{{ states('!input gcode_image_filename') | replace(':', '_') |
             replace('/', '_') }}_{{ now().strftime('%b_%d_%Y - %I.%M%p') }} ({{
             states('!input print_weight_sensor') }}g).png
         target:
