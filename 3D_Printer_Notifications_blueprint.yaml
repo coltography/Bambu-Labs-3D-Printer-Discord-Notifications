@@ -1,4 +1,6 @@
-#Currently UNTESTED but finally opening in Home Assistant without errors.
+#Currently BROKEN but finally opening in Home Assistant without errors so I can troubleshoot
+# Use at own risk, may cause issues with existing helpers if you have them. Reset mine to 0 in testing
+# Will continue to update as I figure out the problems
 
 blueprint:
   name: 3D Printer - Completed Notification
